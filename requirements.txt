@@ -1,0 +1,5 @@
+python=3.6.5
+httpie
+chalice
+boto3
+

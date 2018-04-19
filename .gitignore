@@ -1,0 +1,7 @@
+.chalice/deployments/
+.chalice/venv/
+__pycache__
+documentation.*
+list_of_sources.txt
+.chalice/
+
