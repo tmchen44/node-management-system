@@ -56,13 +56,14 @@ def create_node():
     node_id = str(int(node_id))
     try:
         new_node = node_table.update_item(
-            Item={
-                'node_id': node_id,
-                'shipping_status': 'pending',
-                'config_status': 'unconfigured',
-                'assigned_to': 'None'
-            },
+            Key={'node_id': node_id},
+            UpdateExpression='SET shipping_status = :s, config_status = :c, assigned_to = :a',
             ConditionExpression='attribute_not_exists(node_id)',
+            ExpressionAttributeValues={
+                ':s': 'pending',
+                ':c': 'unconfigured',
+                ':a': 'None'
+            },
             ReturnValues='ALL_NEW'
         )['Attributes']
     # Error handling in case id is already taken
@@ -121,9 +122,7 @@ def create_project():
     project_id = str(int(project_id))
     try:
         new_project = project_table.update_item(
-            Item={
-                'project_id': project_id
-            },
+            Key={'project_id': project_id},
             ConditionExpression='attribute_not_exists(project_id)',
             ReturnValues='ALL_NEW'
         )['Attributes']
