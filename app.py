@@ -196,45 +196,27 @@ def assign_node(node_id, project_id):
 @app.route('/nodes/{node_id}/unassign', methods=['PATCH'], api_key_required=True)
 def detach_node(node_id):
     check_id(node_table, node_id)
-    node = node_table.get_item(Key={'node_id': node_id})['Item']
     try:
-        project_id = node['assigned_to']
-    except:
-        return {'Message': 'Node was {} not assigned to a project. No changes were made.'.format(node_id)}
-    updated_node, updated_project = detach(node_id, project_id)
-    response = {}
-    response['Node'] = updated_node['Attributes']
-    response['Project'] = updated_project['Attributes']
-    response['Message'] = 'Unassigned node {} from project {}'.format(
-                    node_id, project_id)
-    return response
+        updated_node = node_table.update_item(
+            Key={
+                'node_id': node_id
+            },
+            UpdateExpression='REMOVE assigned_to',
+            ConditionExpression='attribute_exists(assigned_to)',
+            ReturnValues='UPDATED_OLD'
+        )['Attributes']
+    except ClientError as e:
+        error_code = e.response["Error"]["Code"]
+        if error_code == 'ConditionalCheckFailedException':
+            message = "Node was not assigned to a project. No changes were made."
+            return {'Message': message}
+    project_id = updated_node['assigned_to']
+    return {'Message': 'Unassigned node {} from project {}'.format(node_id, project_id)}
 
 
 ########################
 # Helper methods
 ########################
-
-def detach(node_id, project_id):
-    updated_node = node_table.update_item(
-        Key={
-            'node_id': node_id
-        },
-        UpdateExpression='REMOVE assigned_to',
-        ReturnValues='ALL_NEW'
-    )
-    project = project_table.get_item(Key={'project_id': project_id})['Item']
-    index = None
-    for ind, val in enumerate(project['node_list']):
-        if val == node_id:
-            index = ind
-    updated_project = project_table.update_item(
-        Key={
-            'project_id': project_id
-        },
-        UpdateExpression='REMOVE node_list[{}]'.format(index),
-        ReturnValues='ALL_NEW'
-    )
-    return updated_node, updated_project
 
 def check_id(table, id_value):
     id_string = table.key_schema[0]['AttributeName']
