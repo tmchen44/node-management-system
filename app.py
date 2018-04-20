@@ -81,7 +81,6 @@ def get_node(node_id):
 
 @app.route('/nodes/{node_id}', methods=['PATCH'], api_key_required=True)
 def modify_node(node_id):
-    # check_id(node_table, node_id)
     data = app.current_request.json_body
     updated_node = modify(data, node_table, node_id)
     response = {
@@ -166,43 +165,26 @@ def modify_project(project_id):
 
 @app.route('/nodes/{node_id}/assign/{project_id}', methods=['PATCH'], api_key_required=True)
 def assign_node(node_id, project_id):
-    check_id(node_table, node_id)
     check_id(project_table, project_id)
-    node = node_table.get_item(Key={'node_id': node_id})['Item']
-    if node.get('assigned_to') == project_id:
-        return {"Message": "Node {} has already been assigned to project {}. No changes were made.".format(node_id, project_id)}
-    elif node.get('assigned_to') != None:
-        detach(node_id, node['assigned_to'])
-    updated_node = node_table.update_item(
-        Key={
-            'node_id': node_id
-        },
-        UpdateExpression='SET assigned_to = :proj',
-        ExpressionAttributeValues={
-            ':proj': project_id
-        },
-        ReturnValues='ALL_NEW'
-    )
-    project = project_table.get_item(Key={'project_id': project_id})['Item']
-    if project.get('node_list') == None:
-        expression = 'SET node_list = :n'
-    else:
-        expression = 'SET node_list = list_append(node_list, :n)'
-    updated_project = project_table.update_item(
-        Key={
-            'project_id': project_id
-        },
-        UpdateExpression=expression,
-        ExpressionAttributeValues={
-            ':n': [node_id]
-        },
-        ReturnValues='ALL_NEW'
-    )
-    response = {}
-    response['Node'] = updated_node['Attributes']
-    response['Project'] = updated_project['Attributes']
-    response['Message'] = 'Node {} added to project {}.'.format(node_id, project_id)
-    return response
+    condition = 'attribute_exists(node_id) AND node_id <> :zero'
+    try:
+        node_table.update_item(
+            Key={
+                'node_id': node_id
+            },
+            UpdateExpression='SET assigned_to = :proj',
+            ConditionExpression=condition,
+            ExpressionAttributeValues={
+                ':proj': project_id,
+                ':zero': '0'
+            }
+        )
+    except ClientError as e:
+        error_code = e.response["Error"]["Code"]
+        if error_code == 'ConditionalCheckFailedException':
+            message = "The given node_id does not exist in the database."
+            raise BadRequestError(message)
+    return {'Message': 'Node {} assigned to project {}.'.format(node_id, project_id)}
 
 @app.route('/nodes/{node_id}/unassign', methods=['PATCH'], api_key_required=True)
 def detach_node(node_id):
@@ -273,10 +255,10 @@ def modify(data, table, id_value):
             ConditionExpression=condition,
             ExpressionAttributeValues=values,
             ReturnValues='ALL_NEW'
-        )
+        )['Attributes']
     except ClientError as e:
         error_code = e.response["Error"]["Code"]
         if error_code == 'ConditionalCheckFailedException':
             message = "The given {} does not exist in the database.".format(id_string)
             raise BadRequestError(message)
-    return updated['Attributes']
+    return updated
