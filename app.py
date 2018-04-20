@@ -26,6 +26,7 @@ NODE_INFO = {"latitude",
 
 attr_dict = {"project_id": PROJECT_INFO, "node_id": NODE_INFO}
 
+
 ########################
 # Node API
 ########################
@@ -43,6 +44,7 @@ def list_nodes():
 
 @app.route('/nodes', methods=['POST'], api_key_required=True)
 def create_node():
+    # Read and update id integer counter
     node_id = node_table.update_item(
         Key={'node_id': '0'},
         UpdateExpression='ADD current_id :c',
@@ -63,6 +65,7 @@ def create_node():
             ConditionExpression='attribute_not_exists(node_id)',
             ReturnValues='ALL_NEW'
         )['Attributes']
+    # Error handling in case id is already taken
     except ClientError as e:
         error_code = e.response["Error"]["Code"]
         if error_code == 'ConditionalCheckFailedException':
@@ -89,6 +92,7 @@ def modify_node(node_id):
     }
     return response
 
+
 ########################
 # Project API
 ########################
@@ -105,6 +109,7 @@ def list_projects():
 
 @app.route('/projects', methods=['POST'], api_key_required=True)
 def create_project():
+    # Read and update id integer counter
     project_id = project_table.update_item(
         Key={'project_id': '0'},
         UpdateExpression='ADD current_id :c',
@@ -122,6 +127,7 @@ def create_project():
             ConditionExpression='attribute_not_exists(project_id)',
             ReturnValues='ALL_NEW'
         )['Attributes']
+    # Error handling in case id is already taken
     except ClientError as e:
         error_code = e.response["Error"]["Code"]
         if error_code == 'ConditionalCheckFailedException':
@@ -158,6 +164,7 @@ def modify_project(project_id):
         'Message': 'Project info updated.'
     }
     return response
+
 
 ########################
 # Node Assignment API
@@ -218,6 +225,7 @@ def detach_node(node_id):
 # Helper methods
 ########################
 
+# Checks if node or project exists, then returns the node or project (if it exists)
 def check_id(table, id_value):
     id_string = table.key_schema[0]['AttributeName']
     result = table.get_item(Key={id_string: id_value})
@@ -226,6 +234,8 @@ def check_id(table, id_value):
         raise BadRequestError(message)
     return result
 
+# Parses the request body and generates a valid UpdateExpression and
+# ExpressionAttributeValues dictionary for use in updating database
 def modify_generate_expr_and_values(data, id_string):
     if not data or len(data.keys()) <= 0:
         message = "You must provide at least one modifiable attribute in the request json body."
@@ -242,6 +252,7 @@ def modify_generate_expr_and_values(data, id_string):
     expression = expression.rstrip(', ')
     return expression, values
 
+# Modifies project or node
 def modify(data, table, id_value):
     id_string = table.key_schema[0]['AttributeName']
     expression, values = modify_generate_expr_and_values(data, id_string)
