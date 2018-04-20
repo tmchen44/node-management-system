@@ -1,18 +1,19 @@
 from chalice import Chalice, BadRequestError, ConflictError
 import boto3
-from boto3.dynamodb.conditions import Key, Attr
+from boto3.dynamodb.conditions import Key
 from botocore.exceptions import ClientError
 # from uuid import uuid4
 
 app = Chalice(app_name='clarity-challenge')
 app.debug = True
 
-# global variables
+# Global variables
 # dynamodb = boto3.resource('dynamodb', region_name='us-west-1')
 dynamodb = boto3.resource('dynamodb', endpoint_url='http://localhost:8000')
 node_table = dynamodb.Table('nodes')
 project_table = dynamodb.Table('projects')
 
+# Attribute list for projects and nodes
 PROJECT_INFO = {"project_name",
                 "customer_name",
                 "start_date",
@@ -32,10 +33,13 @@ attr_dict = {"project_id": PROJECT_INFO, "node_id": NODE_INFO}
 @app.route('/', api_key_required=True)
 @app.route('/nodes', api_key_required=True)
 def list_nodes():
-    response = node_table.scan(
-        FilterExpression=Attr('node_id').ne('0')
+    results = node_table.scan(
+        FilterExpression='node_id <> :zero',
+        ExpressionAttributeValues={
+            ':zero': '0'
+        }
     )
-    return response['Items']
+    return results['Items']
 
 @app.route('/nodes', methods=['POST'], api_key_required=True)
 def create_node():
@@ -49,37 +53,41 @@ def create_node():
     )['Attributes']['current_id']
     node_id = str(int(node_id))
     try:
-        node_table.put_item(
+        new_node = node_table.update_item(
             Item={
                 'node_id': node_id,
                 'shipping_status': 'pending',
-                'config_status': 'unconfigured'
+                'config_status': 'unconfigured',
+                'assigned_to': 'None'
             },
-            ConditionExpression='attribute_not_exists(node_id)'
-        )
+            ConditionExpression='attribute_not_exists(node_id)',
+            ReturnValues='ALL_NEW'
+        )['Attributes']
     except ClientError as e:
         error_code = e.response["Error"]["Code"]
         if error_code == 'ConditionalCheckFailedException':
             message = "An error occured while creating the node. Please try again."
             raise ConflictError(message)
-    response = {}
-    response['Item'] = node_table.get_item(Key={'node_id': node_id})['Item']
-    response['Message'] = 'You have created a node.'
+    response = {
+        'Item': new_node,
+        'Message': 'Node created.'
+    }
     return response
 
 @app.route('/nodes/{node_id}', api_key_required=True)
 def get_node(node_id):
-    node = check_id(node_table, node_id)
-    return node['Item']
+    result = check_id(node_table, node_id)
+    return result['Item']
 
 @app.route('/nodes/{node_id}', methods=['PATCH'], api_key_required=True)
 def modify_node(node_id):
-    check_id(node_table, node_id)
+    # check_id(node_table, node_id)
     data = app.current_request.json_body
-    updated = modify(data, node_table, node_id)
-    response = {}
-    response['Item'] = updated
-    response['Message'] = 'Node info updated.'
+    updated_node = modify(data, node_table, node_id)
+    response = {
+        'Item': updated_node,
+        'Message': 'Node info updated.'
+    }
     return response
 
 ########################
@@ -88,10 +96,13 @@ def modify_node(node_id):
 
 @app.route('/projects', api_key_required=True)
 def list_projects():
-    response = project_table.scan(
-        FilterExpression=Attr('project_id').ne('0')
+    results = project_table.scan(
+        FilterExpression='project_id <> :zero',
+        ExpressionAttributeValues={
+            ':zero': '0'
+        }
     )
-    return response['Items']
+    return results['Items']
 
 @app.route('/projects', methods=['POST'], api_key_required=True)
 def create_project():
@@ -105,47 +116,48 @@ def create_project():
     )['Attributes']['current_id']
     project_id = str(int(project_id))
     try:
-        project_table.put_item(
+        new_project = project_table.update_item(
             Item={
                 'project_id': project_id
             },
-            ConditionExpression='attribute_not_exists(project_id)'
-        )
+            ConditionExpression='attribute_not_exists(project_id)',
+            ReturnValues='ALL_NEW'
+        )['Attributes']
     except ClientError as e:
         error_code = e.response["Error"]["Code"]
         if error_code == 'ConditionalCheckFailedException':
             message = "An error occured while creating the project. Please try again."
             raise ConflictError(message)
-    response = {}
-    response['Item'] = project_table.get_item(
-                        Key={'project_id': project_id})['Item']
-    response['Message'] = 'You have created a project.'
+    response = {
+        'Item': new_project,
+        'Message': 'Project created.'
+    }
     return response
 
 @app.route('/projects/{project_id}', api_key_required=True)
 def get_project(project_id):
-    project = check_id(project_table, project_id)
-    return project['Item']
+    result = check_id(project_table, project_id)
+    return result['Item']
 
 @app.route('/projects/{project_id}/nodes', api_key_required=True)
 def get_project_nodes(project_id):
     check_id(project_table, project_id)
-    nodes = node_table.scan(
+    results = node_table.scan(
         FilterExpression="assigned_to = :proj_id",
         ExpressionAttributeValues={
             ':proj_id': project_id
         }
     )
-    return nodes['Items']
+    return results['Items']
 
 @app.route('/projects/{project_id}', methods=['PATCH'], api_key_required=True)
 def modify_project(project_id):
-    check_id(project_table, project_id)
     data = app.current_request.json_body
-    updated = modify(data, project_table, project_id)
-    response = {}
-    response['Item'] = updated
-    response['Message'] = 'Project info updated.'
+    updated_project = modify(data, project_table, project_id)
+    response = {
+        'Item': updated_project,
+        'Message': 'Project info updated.'
+    }
     return response
 
 ########################
@@ -154,7 +166,6 @@ def modify_project(project_id):
 
 @app.route('/nodes/{node_id}/assign/{project_id}', methods=['PATCH'], api_key_required=True)
 def assign_node(node_id, project_id):
-    data = app.current_request.json_body
     check_id(node_table, node_id)
     check_id(project_table, project_id)
     node = node_table.get_item(Key={'node_id': node_id})['Item']
@@ -195,23 +206,30 @@ def assign_node(node_id, project_id):
 
 @app.route('/nodes/{node_id}/unassign', methods=['PATCH'], api_key_required=True)
 def detach_node(node_id):
-    check_id(node_table, node_id)
+    condition = 'attribute_exists(node_id) AND node_id <> :zero'
     try:
         updated_node = node_table.update_item(
             Key={
                 'node_id': node_id
             },
-            UpdateExpression='REMOVE assigned_to',
-            ConditionExpression='attribute_exists(assigned_to)',
+            UpdateExpression='SET assigned_to = :n',
+            ConditionExpression=condition,
+            ExpressionAttributeValues={
+                ':zero': '0',
+                ':n': 'None'
+            },
             ReturnValues='UPDATED_OLD'
         )['Attributes']
     except ClientError as e:
         error_code = e.response["Error"]["Code"]
         if error_code == 'ConditionalCheckFailedException':
-            message = "Node was not assigned to a project. No changes were made."
-            return {'Message': message}
-    project_id = updated_node['assigned_to']
-    return {'Message': 'Unassigned node {} from project {}'.format(node_id, project_id)}
+            message = "The given node_id does not exist in the database."
+            raise BadRequestError(message)
+    old_project_id = updated_node['assigned_to']
+    if old_project_id == 'None':
+        return {'Message': 'Node was already unassigned. No changes were made.'}
+    else:
+        return {'Message': 'Unassigned node {} from project {}'.format(node_id, old_project_id)}
 
 
 ########################
@@ -232,6 +250,7 @@ def modify_generate_expr_and_values(data, id_string):
         raise BadRequestError(message)
     expression = "SET "
     values = {}
+    values[':zero'] = '0'
     for key, value in data.items():
         if key not in attr_dict[id_string]:
             raise BadRequestError("Invalid attribute detected. Please check that json keys match those defined in the documentation.")
@@ -244,12 +263,20 @@ def modify_generate_expr_and_values(data, id_string):
 def modify(data, table, id_value):
     id_string = table.key_schema[0]['AttributeName']
     expression, values = modify_generate_expr_and_values(data, id_string)
-    updated = table.update_item(
-        Key={
-            id_string: id_value
-        },
-        UpdateExpression=expression,
-        ExpressionAttributeValues=values,
-        ReturnValues='ALL_NEW'
-    )
+    condition = 'attribute_exists({0}) AND {0} <> :zero'.format(id_string)
+    try:
+        updated = table.update_item(
+            Key={
+                id_string: id_value
+            },
+            UpdateExpression=expression,
+            ConditionExpression=condition,
+            ExpressionAttributeValues=values,
+            ReturnValues='ALL_NEW'
+        )
+    except ClientError as e:
+        error_code = e.response["Error"]["Code"]
+        if error_code == 'ConditionalCheckFailedException':
+            message = "The given {} does not exist in the database.".format(id_string)
+            raise BadRequestError(message)
     return updated['Attributes']
