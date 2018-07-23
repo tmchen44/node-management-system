@@ -4,7 +4,7 @@ This backend application provides a RESTful API for managing nodes and projects.
 ## Getting Started
 ### Using the API
 1. Install httpie (link to website [here](https://httpie.org/doc#installation))
-2. Make API requests as outlined in the documentation (see repository).
+2. Make API requests as outlined in `documentation.pdf` (see repository).
 
 ### Deploying the API
 1. Install Python 3, Chalice, and Boto3 and their associated dependences.
@@ -12,4 +12,4 @@ This backend application provides a RESTful API for managing nodes and projects.
 3. Run `python database_setup.py`, then `chalice deploy`.
 
 ## Project Overview
-With the API, equipment nodes and projects can be created, read, updated. Nodes can be associated and deassociated with projects. Please see the API documentation for more details regarding the API.
+With the API, equipment nodes and projects can be created, read, updated. Nodes can be associated and deassociated with projects. Please see `documentation.pdf` for more details regarding the API.
